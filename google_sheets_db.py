@@ -45,3 +45,15 @@ class GoogleSheetsDB:
 
     def delete_sheet(self, worksheet):
         self.spreadsheet.del_worksheet(worksheet)
+
+    def get_sheets_names(self):
+        return [sheet.title for sheet in self.get_sheets()]
+
+    def sheet_exists(self, name):
+        return name in self.get_sheets_names()
+
+    def get_sheets_map(self, inverted=False):
+        if inverted:
+            return {sheet.title: sheet.id for sheet in self.get_sheets()}
+        else:
+            return {sheet.id: sheet.title for sheet in self.get_sheets()}
