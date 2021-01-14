@@ -17,12 +17,12 @@ class BaseSheet:
             return cls.__spreadsheet
 
         if cls.meta.get('spreadsheet_id'):
-            spreadsheet = [s for s in GoogleSheetsDB.SPREADSHEETS if s.spreadsheet_id == cls.meta['spreadsheet_id']]
+            spreadsheet = [s for s in GoogleSheetsDB.spreadsheets if s.spreadsheet_id == cls.meta['spreadsheet_id']]
             if not spreadsheet:
                 raise Exception(f"Spreadsheet {cls.meta['spreadsheet_id']} is not declared.")
             cls.__spreadsheet = spreadsheet[0]
-        elif GoogleSheetsDB.SPREADSHEETS:
-            cls.__spreadsheet = GoogleSheetsDB.SPREADSHEETS[0]
+        elif GoogleSheetsDB.spreadsheets:
+            cls.__spreadsheet = GoogleSheetsDB.spreadsheets[0]
         else:
             raise Exception("No spreadsheet specified.")
         return cls.__spreadsheet
@@ -34,6 +34,14 @@ class BaseSheet:
 
         cls.__sheet_name = cls.meta['sheet_name'] if cls.meta.get('sheet_name') else cls.__name__
         return cls.__sheet_name
+
+    @classmethod
+    def _sheet(cls):
+        if cls.__sheet:
+            return cls.__sheet
+
+        cls.__sheet = cls._db().get_sheet_by_name(cls._sheet_name())
+        return cls.__sheet
 
     @classmethod
     def _columns(cls):
@@ -60,6 +68,26 @@ class BaseSheet:
         return column[0]
 
     @classmethod
+    def get_all_records(cls):
+        return cls._sheet().get_all_records()
+
+    @classmethod
+    def get_all_values(cls):
+        return cls._sheet().get_all_values()
+
+    @classmethod
+    def get_all_data(cls, as_dicts=False):
+        return cls.get_all_records() if as_dicts else cls.get_all_values()
+
+    @classmethod
+    def count(cls):
+        return len(cls.get_all_values())
+
+    @classmethod
+    def clear(cls):
+        return cls._sheet().clear()
+
+    @classmethod
     def insert(cls, *row, **fields):
         row = list(row)
         fields_cache = []
@@ -78,22 +106,9 @@ class BaseSheet:
         if len(row) > len(columns):
             raise Exception(f"Values length is greater than columns length: {row}.")
 
-        db = cls._db()
-        range = '!'.join((cls._sheet_name(), f'A:{columns[-1].char}'))
-        sheet_values = db.spreadsheets().values()
-        cur_rows = sheet_values.get(spreadsheetId=db.spreadsheet_id, range=range).execute().get('values', [])
-        last_row_id = str(int(len(cur_rows)) + 1)
-
-        sheet_values.batchUpdate(
-            spreadsheetId=db.spreadsheet_id,
-            body={
-                "valueInputOption": "USER_ENTERED",
-                "data": [{
-                    "range": range + last_row_id,
-                    "majorDimension": "ROWS",
-                    "values": [row]
-                }]
-            }).execute()
+        index = int(cls.count()) + 1
+        cls._sheet().insert_row(row, index=index)
+        return index
 
     @classmethod
     def insert_many(cls, *rows):
@@ -105,19 +120,6 @@ class BaseSheet:
                 continue
             raise Exception(f"Values length is greater than columns length: {rows}.")
 
-        db = cls._db()
-        range = '!'.join((cls._sheet_name(), f'A:{columns[-1].char}'))
-        sheet_values = db.spreadsheets().values()
-        cur_rows = sheet_values.get(spreadsheetId=db.spreadsheet_id, range=range).execute().get('values', [])
-        last_row_id = str(int(len(cur_rows)) + 1)
-
-        sheet_values.batchUpdate(
-            spreadsheetId=db.spreadsheet_id,
-            body={
-                "valueInputOption": "USER_ENTERED",
-                "data": [{
-                    "range": range + last_row_id,
-                    "majorDimension": "ROWS",
-                    "values": rows
-                }]
-            }).execute()
+        index = int(cls.count()) + 1
+        cls._sheet().insert_rows(rows, row=index)
+        return index

@@ -1,8 +1,7 @@
 import os
 import pickle
 
-import httplib2
-from apiclient import discovery
+import gspread
 from google.auth.transport.requests import Request
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -10,7 +9,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 class GoogleSheetsDB:
 
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-    SPREADSHEETS = []
+    spreadsheets = []
 
     def __init__(self, spreadsheet_id, *args, credentails_file=None, **kwargs):
         credentials = None
@@ -27,29 +26,22 @@ class GoogleSheetsDB:
             with open('.credentials.pickle', 'wb') as token:
                 pickle.dump(credentials, token)
 
-        http_auth = credentials.authorize(httplib2.Http())
-        self.service = discovery.build('sheets', 'v4', http=http_auth)
+        gc = gspread.authorize(credentials)
         self.spreadsheet_id = spreadsheet_id
-        self.SPREADSHEETS.append(self)
+        self.spreadsheet = gc.open_by_key(self.spreadsheet_id)
+        self.spreadsheets.append(self)
 
     def close(self):
-        self.SPREADSHEETS.remove(self)
+        self.spreadsheets.remove(self)
 
-    def spreadsheets(self):
-        return self.service.spreadsheets()
+    def get_sheet_by_name(self, name):
+        return self.spreadsheet.worksheet(name)
 
     def get_sheets(self):
-        spreadsheet = self.service.spreadsheets().get(spreadsheetId=self.spreadsheet_id).execute()
-        return spreadsheet.get('sheets')
+        return self.spreadsheet.worksheets()
 
-    def get_sheets_names(self):
-        return [sheet['properties']['title'] for sheet in self.get_sheets()]
+    def create_sheet(self, name, rows=100, cols=20):
+        return self.spreadsheet.add_worksheet(title=name, rows=str(rows), cols=str(cols))
 
-    def get_sheets_map(self, inverted=False):
-        if inverted:
-            return {sheet['properties']['title']: sheet['properties']['sheetId'] for sheet in self.get_sheets()}
-        else:
-            return {sheet['properties']['sheetId']: sheet['properties']['title'] for sheet in self.get_sheets()}
-
-    def sheet_exists(self, name):
-        return name in self.get_sheets_names()
+    def delete_sheet(self, worksheet):
+        self.spreadsheet.del_worksheet(worksheet)
