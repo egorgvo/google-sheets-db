@@ -1,7 +1,6 @@
 from operator import itemgetter
 
-from field import Field
-from google_sheets_db import GoogleSheetsDB
+from google_sheets_db import Field, GoogleSheetsDB
 
 
 class BaseSheet:
