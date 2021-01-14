@@ -1,6 +1,24 @@
+# Virtual environment
+.venv
+venv
+
+# Environment variables
 .env
-.idea
-tests.py
-test_sheets.py
+
+# Python
+__pycache__/
+*.pyc
+
+# PyCharm
+.idea/
+
+# PYPI
+build/
+dist/
+*.egg-info/
+
 .credentials.pickle
 .credentials.json
+
+tests.py
+test_sheets.py
