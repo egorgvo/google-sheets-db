@@ -1,4 +1,6 @@
-from operator import itemgetter
+from itertools import chain
+
+from gspread.utils import rowcol_to_a1
 
 from google_sheets_db import Field, GoogleSheetsDB
 
@@ -53,18 +55,71 @@ class BaseSheet:
         attrs.pop('_BaseSheet__spreadsheet', None)
         attrs.pop('_BaseSheet__sheet_name', None)
         fields = []
-        for i, field in enumerate(attrs):
-            fields.append(Field(field, order_number=i, field_type=getattr(cls, field)))
-        fields = sorted(fields, key=lambda x: x.order_number)
-        cls.__columns = fields
+        specified_order_numbers = [field.order_number for field in attrs
+                                   if isinstance(field, Field) and field.order_number]
+        order_numbers = list(range(1, max(chain(specified_order_numbers, [len(attrs)])) + 1))
+        order_numbers = [i for i in order_numbers if i not in specified_order_numbers]
+
+        for name, value in attrs.items():
+            if isinstance(value, Field):
+                field = value
+                field.name = name
+            else:
+                field = Field(name, order_number=order_numbers.pop(0), field_type=value)
+            if not field.order_number:
+                field.order_number = order_numbers.pop(0)
+            fields.append(field)
+        cls.__columns = sorted(fields, key=lambda x: x.order_number)
         return cls.__columns
+
+    @classmethod
+    def init_named_row(cls):
+        columns = cls._columns()
+        return {column.name: column.field_type() for column in columns}
+
+    @classmethod
+    def init_list_row(cls):
+        columns = cls._columns()
+        result = [None for i in range(columns[-1].order_number)]
+        for column in columns:
+            result[column.order_number-1] = column.field_type()
+        return result
+
+    @classmethod
+    def get_primary_field(cls, raise_exc=False):
+        column = [f for f in cls._columns() if f.primary_key]
+        if raise_exc and not column:
+            raise Exception(f"Primary key is not specified.")
+        if len(column) > 1:
+            raise Exception(f"More than one primary keys specified. "
+                            f"Library does not work with more than one primary fields yet.")
+        return column[0]
 
     @classmethod
     def _get_column_by_name(cls, name):
         column = [f for f in cls._columns() if f.name == name]
         if not column:
-            raise Exception(f"Unknown field name: {name}.")
+            raise Exception(f"Unknown field name: {name}. Sheet schema: {cls.__name__}")
         return column[0]
+
+    @classmethod
+    def _get_column_by_order_number(cls, order_number, raise_exc=True):
+        column = [f for f in cls._columns() if f.order_number == order_number]
+        if not column and raise_exc:
+            raise Exception(f"Order number is unknown for specified sheet schema: {order_number}, "
+                            f"sheet schema: {cls.__name__}.")
+        elif not column:
+            return None
+        return column[0]
+
+    @classmethod
+    def get_column_values(cls, name=None, order_number=None):
+        if not name and not order_number:
+            raise Exception(f"Not name nor order_number specified for get_column_values method.")
+        if not order_number:
+            column = cls._get_column_by_name(name)
+            order_number = column.order_number
+        return cls._sheet().col_values(order_number)
 
     @classmethod
     def get_all_records(cls):
@@ -87,23 +142,74 @@ class BaseSheet:
         return cls._sheet().clear()
 
     @classmethod
-    def insert(cls, *row, **fields):
+    def convert_named_row_to_list(cls, **row):
+        result = cls.init_list_row()
+        for name, value in row.items():
+            result[cls._get_column_by_name(name).order_number-1] = value
+        return result
+
+    @classmethod
+    def convert_list_row_to_named(cls, **row):
+        result = cls.init_named_row()
+        for i, value in enumerate(row):
+            column = cls._get_column_by_order_number(i+1, raise_exc=False)
+            if not column:
+                continue
+            result[column.name] = value
+        return result
+
+    @classmethod
+    def _prepare_row(cls, *row, pk=None, as_named=False, **fields):
         row = list(row)
-        fields_cache = []
-        for name, value in fields.items():
-            fields_cache.append({
-                'order_number': cls._get_column_by_name(name).order_number,
-                'value': value
-            })
-        fields_cache = sorted(fields_cache, key=itemgetter('order_number'))
-        for field in fields_cache:
-            order_number = field['order_number']
-            while len(row) < order_number:
-                row.append(None)
-            row.insert(order_number, field['value'])
         columns = cls._columns()
-        if len(row) > len(columns):
+
+        # if pk specified - put it in fields
+        if pk and len(columns) > len(fields) + len(row):
+            pk_key = cls.get_primary_field()
+            if pk_key.name not in fields:
+                fields[pk_key.name] = pk
+
+        for i, column in enumerate(columns):
+            if not row:
+                break
+            if column.name in fields:
+                continue
+            fields[column.name] = row.pop(0)
+        if row:
             raise Exception(f"Values length is greater than columns length: {row}.")
+
+        if as_named:
+            return fields
+        return cls.convert_named_row_to_list(**fields)
+
+    @classmethod
+    def generate_index(cls, named=False):
+        primary_field = cls.get_primary_field()
+        if not primary_field:
+            return {} if named else None
+        indexes = cls.get_column_values(order_number=primary_field.order_number)
+        pk = 100
+        while True:
+            if pk not in indexes and str(pk) not in indexes:
+                break
+            pk += 1
+        if named:
+            return {primary_field.name: pk}
+        else:
+            return pk
+
+    @classmethod
+    def insert(cls, *row, generate_index=True, **fields):
+        if generate_index:
+            fields.update(cls.generate_index(named=True))
+        row = cls._prepare_row(*row, **fields)
+        primary_field = cls.get_primary_field()
+        if primary_field and not row[primary_field.order_number]:
+            row[primary_field.order_number] = cls.generate_index()
+        elif not generate_index and row[primary_field.order_number]:
+            indexes = cls.get_column_values(primary_field.order_number)
+            if row[primary_field.order_number] in indexes or str(row[primary_field.order_number]) in indexes:
+                raise Exception(f"Primary key is not unique: {cls.convert_list_row_to_named(row)}.")
 
         index = int(cls.count()) + 1
         cls._sheet().insert_row(row, index=index)
@@ -122,3 +228,52 @@ class BaseSheet:
         index = int(cls.count()) + 1
         cls._sheet().insert_rows(rows, row=index)
         return index
+
+    @classmethod
+    def update_with_index(cls, index, *row, **fields):
+        return cls._update(index=index, *row, **fields)
+
+    @classmethod
+    def update_with_pk(cls, pk, *row, **fields):
+        return cls._update(pk=pk, *row, **fields)
+
+    @classmethod
+    def get_row_index_for_pk(cls, pk):
+        indexes = cls.get_column_values(order_number=cls.get_primary_field().order_number)
+        row_id = str(pk)
+        if pk in indexes:
+            return indexes.index(row_id) + 1
+        elif str(pk) in indexes:
+            return indexes.index(str(pk)) + 1
+        return None
+
+    @classmethod
+    def get_row_with_pk(cls, pk):
+        index = cls.get_row_index_for_pk(pk)
+        if index is None:
+            return None
+        return cls._sheet().row_values(index)
+
+    @classmethod
+    def _update(cls, *row, index=None, pk=None, **fields):
+        if index is None and pk is None:
+            raise Exception(f"No key specified for _update method.")
+
+        index = cls.get_row_index_for_pk(pk)
+        if not index:
+            raise Exception(f"No row found for pk {pk}.")
+        # init result_row with current row values
+        sheet = cls._sheet()
+        result_row = sheet.row_values(index)
+
+        # and then fill it with new values
+        new_values = cls._prepare_row(*row, pk=pk, as_named=True, **fields)
+        for column in cls._columns():
+            if column.name not in new_values:
+                continue
+            while len(result_row) < column.order_number:
+                result_row.append(None)
+            result_row[column.order_number-1] = new_values[column.name]
+
+        first_cell = rowcol_to_a1(index, 1)
+        return sheet.update(first_cell, [result_row])
