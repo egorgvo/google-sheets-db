@@ -1,5 +1,7 @@
+import types
 from itertools import chain
 
+import pandas as pd
 from gspread.utils import rowcol_to_a1
 
 from google_sheets_db import Field, GoogleSheetsDB
@@ -10,7 +12,31 @@ class BaseSheet:
     __sheet_name = ''
     __sheet = None
     __columns = []
+    __init_named_row = None
+    __init_list_row = None
+    __primary_field = None
     meta = {}
+
+    def __init__(self, *args, **kwargs):
+        row_dict = self._prepare_row(*args, as_named=True, **kwargs)
+        for field in self._columns():
+            setattr(self, field.name, row_dict.get(field.name, field.field_type()))
+
+    def save(self):
+        self.update_or_insert({'pk': self.pk}, self._data)
+
+    @property
+    def _data(self):
+        attrs = dict(self.__dict__.items())
+        attrs.pop('__module__', None)
+        attrs.pop('__doc__', None)
+        attrs.pop('_BaseSheet__spreadsheet', None)
+        attrs.pop('_BaseSheet__sheet', None)
+        attrs.pop('_BaseSheet__sheet_name', None)
+        for name, value in list(attrs.items()):
+            if isinstance(value, property) or isinstance(value, types.FunctionType):
+                attrs.pop(name)
+        return attrs
 
     @classmethod
     def _db(cls):
@@ -53,7 +79,12 @@ class BaseSheet:
         attrs.pop('__module__', None)
         attrs.pop('__doc__', None)
         attrs.pop('_BaseSheet__spreadsheet', None)
+        attrs.pop('_BaseSheet__sheet', None)
         attrs.pop('_BaseSheet__sheet_name', None)
+        for name, value in list(attrs.items()):
+            if isinstance(value, property) or isinstance(value, types.FunctionType):
+                attrs.pop(name)
+
         fields = []
         specified_order_numbers = [field.order_number for field in attrs
                                    if isinstance(field, Field) and field.order_number]
@@ -65,7 +96,7 @@ class BaseSheet:
                 field = value
                 field.name = name
             else:
-                field = Field(name, order_number=order_numbers.pop(0), field_type=value)
+                field = Field(name=name, field_type=value, order_number=order_numbers.pop(0))
             if not field.order_number:
                 field.order_number = order_numbers.pop(0)
             fields.append(field)
@@ -74,26 +105,35 @@ class BaseSheet:
 
     @classmethod
     def init_named_row(cls):
+        if cls.__init_named_row:
+            return cls.__init_named_row
         columns = cls._columns()
-        return {column.name: column.field_type() for column in columns}
+        cls.__init_named_row = {column.name: column.field_type() for column in columns}
+        return cls.__init_named_row
 
     @classmethod
     def init_list_row(cls):
+        if cls.__init_list_row:
+            return cls.__init_list_row
         columns = cls._columns()
         result = [None for i in range(columns[-1].order_number)]
         for column in columns:
-            result[column.order_number-1] = column.field_type()
-        return result
+            result[column.order_number - 1] = column.field_type()
+        cls.__init_list_row = result
+        return cls.__init_list_row
 
     @classmethod
     def get_primary_field(cls, raise_exc=False):
+        if cls.__primary_field:
+            return cls.__primary_field
         column = [f for f in cls._columns() if f.primary_key]
         if raise_exc and not column:
             raise Exception(f"Primary key is not specified.")
         if len(column) > 1:
             raise Exception(f"More than one primary keys specified. "
                             f"Library does not work with more than one primary fields yet.")
-        return column[0]
+        cls.__primary_field = column[0]
+        return cls.__primary_field
 
     @classmethod
     def _get_column_by_name(cls, name):
@@ -145,14 +185,14 @@ class BaseSheet:
     def convert_named_row_to_list(cls, **row):
         result = cls.init_list_row()
         for name, value in row.items():
-            result[cls._get_column_by_name(name).order_number-1] = value
+            result[cls._get_column_by_name(name).order_number - 1] = value
         return result
 
     @classmethod
     def convert_list_row_to_named(cls, **row):
         result = cls.init_named_row()
         for i, value in enumerate(row):
-            column = cls._get_column_by_order_number(i+1, raise_exc=False)
+            column = cls._get_column_by_order_number(i + 1, raise_exc=False)
             if not column:
                 continue
             result[column.name] = value
@@ -200,20 +240,22 @@ class BaseSheet:
 
     @classmethod
     def insert(cls, *row, generate_index=True, **fields):
-        if generate_index:
+        primary_field = cls.get_primary_field()
+        if primary_field.name not in fields and len(row) < len(cls._columns()) and generate_index:
             fields.update(cls.generate_index(named=True))
         row = cls._prepare_row(*row, **fields)
-        primary_field = cls.get_primary_field()
-        if primary_field and not row[primary_field.order_number]:
-            row[primary_field.order_number] = cls.generate_index()
-        elif not generate_index and row[primary_field.order_number]:
+        if primary_field and not row[primary_field.order_number - 1]:
+            row[primary_field.order_number - 1] = cls.generate_index()
+        elif not generate_index and primary_field and row[primary_field.order_number - 1]:
             indexes = cls.get_column_values(primary_field.order_number)
-            if row[primary_field.order_number] in indexes or str(row[primary_field.order_number]) in indexes:
+            if row[primary_field.order_number - 1] in indexes or str(row[primary_field.order_number - 1]) in indexes:
                 raise Exception(f"Primary key is not unique: {cls.convert_list_row_to_named(row)}.")
+
+        primary_key = row[primary_field.order_number - 1] if primary_field else None
 
         index = int(cls.count()) + 1
         cls._sheet().insert_row(row, index=index)
-        return index
+        return index, primary_key
 
     @classmethod
     def insert_many(cls, *rows):
@@ -230,6 +272,31 @@ class BaseSheet:
         return index
 
     @classmethod
+    def update_or_insert(cls, filtr=None, update=None, first_only=False):
+        # get dataframe
+        values = cls.get_all_values()
+        columns_names = [c.name for c in cls._columns()]
+        for row in values:
+            row.extend([None] * (len(columns_names) - len(row)))
+        dataframe = pd.DataFrame(values, columns=columns_names)
+        # filter dataframe
+        pk = cls.get_primary_field()
+        if 'pk' in filtr:
+            filtr[pk.name] = filtr.pop('pk')
+        for name, value in filtr.items():
+            # TODO Реализовать поиск с учетом типа поля
+            dataframe = dataframe[dataframe[name] == str(value)]
+        rows = []
+        for i, row in dataframe.iterrows():
+            rows.append(cls.update_with_pk(row[pk.name], **update))
+            if first_only:
+                break
+        if not rows:
+            filtr.update(update)
+            rows = [cls.insert(**filtr)]
+        return rows
+
+    @classmethod
     def update_with_index(cls, index, *row, **fields):
         return cls._update(index=index, *row, **fields)
 
@@ -240,9 +307,8 @@ class BaseSheet:
     @classmethod
     def get_row_index_for_pk(cls, pk):
         indexes = cls.get_column_values(order_number=cls.get_primary_field().order_number)
-        row_id = str(pk)
         if pk in indexes:
-            return indexes.index(row_id) + 1
+            return indexes.index(pk) + 1
         elif str(pk) in indexes:
             return indexes.index(str(pk)) + 1
         return None
@@ -253,6 +319,13 @@ class BaseSheet:
         if index is None:
             return None
         return cls._sheet().row_values(index)
+
+    @classmethod
+    def with_pk(cls, pk):
+        row = cls.get_row_with_pk(pk)
+        if not row:
+            return None
+        return cls(*row)
 
     @classmethod
     def _update(cls, *row, index=None, pk=None, **fields):
@@ -273,7 +346,12 @@ class BaseSheet:
                 continue
             while len(result_row) < column.order_number:
                 result_row.append(None)
-            result_row[column.order_number-1] = new_values[column.name]
+            result_row[column.order_number - 1] = new_values[column.name]
 
         first_cell = rowcol_to_a1(index, 1)
         return sheet.update(first_cell, [result_row])
+
+    @property
+    def pk(self):
+        pk_field = self.get_primary_field()
+        return getattr(self, pk_field.name)
