@@ -1,5 +1,5 @@
 import pathlib
-from setuptools import setup
+from setuptools import setup, find_packages
 
 # The directory containing this file
 HERE = pathlib.Path(__file__).parent
@@ -10,7 +10,7 @@ README = (HERE / "README.md").read_text()
 # This call to setup() does all the work
 setup(
     name="google-sheets-db",
-    version="1.0.6",
+    version="1.0.7",
     description="Google Sheets as a database ORM",
     long_description=README,
     long_description_content_type="text/markdown",
