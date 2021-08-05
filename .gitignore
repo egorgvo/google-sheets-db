@@ -20,5 +20,4 @@ dist/
 .credentials.pickle
 .credentials.json
 
-tests.py
-test_sheets.py
+tests
