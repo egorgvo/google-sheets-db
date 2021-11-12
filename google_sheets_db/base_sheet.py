@@ -162,12 +162,14 @@ class BaseSheet:
         return cls._sheet().col_values(order_number)
 
     @classmethod
-    def get_all_records(cls):
-        return cls._sheet().get_all_records()
-
-    @classmethod
     def get_all_values(cls):
         return cls._sheet().get_all_values()
+
+    @classmethod
+    def get_all_records(cls):
+        values = cls.get_all_values()
+        names = [f.name for f in cls._columns()]
+        return [dict(zip(names, value)) for value in values]
 
     @classmethod
     def get_all_data(cls, as_dicts=False):
