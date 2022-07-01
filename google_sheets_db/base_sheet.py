@@ -141,6 +141,7 @@ class BaseSheet(WorksheetBase, metaclass=BaseSheetMetaclass):
             update.pop(self._pk_name, None)
         self.update_or_insert({self._pk_name: pk}, update=update)
         self.pk = pk
+        # TODO init _index too
         return self
 
     @classmethod
