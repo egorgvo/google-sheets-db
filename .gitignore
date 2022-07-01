@@ -19,5 +19,3 @@ dist/
 
 .credentials.pickle
 .credentials.json
-
-tests
