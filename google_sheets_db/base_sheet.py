@@ -146,7 +146,7 @@ class BaseSheet(WorksheetBaseMixin, metaclass=BaseSheetMetaclass):
     def init_named_row(cls):
         if cls.__init_named_row:
             return deepcopy(cls.__init_named_row)
-        cls.__init_named_row = {column.name: column.field_type() for column in cls._columns}
+        cls.__init_named_row = {column.name: column.default for column in cls._columns}
         return deepcopy(cls.__init_named_row)
 
     @classmethod
@@ -156,7 +156,7 @@ class BaseSheet(WorksheetBaseMixin, metaclass=BaseSheetMetaclass):
         columns = cls._columns
         result = [None for i in range(columns[-1].order_number)]
         for column in columns:
-            result[column.order_number - 1] = column.field_type()
+            result[column.order_number - 1] = column.default
         cls.__init_list_row = result
         return deepcopy(cls.__init_list_row)
 

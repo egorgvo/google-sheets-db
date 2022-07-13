@@ -20,7 +20,6 @@ class ActiveFieldTests(TestCase):
 
     @classmethod
     def setUpClass(cls, *args, **kwargs):
-        # Start Flask app
         super().setUpClass()
 
         db = GoogleSheetsDB(SPREADSHEET_ID, credentails_file=CREDENTIALS_FILE)
