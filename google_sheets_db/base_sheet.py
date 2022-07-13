@@ -1,6 +1,6 @@
 import inspect
 import types
-from copy import copy
+from copy import copy, deepcopy
 from functools import cached_property, lru_cache
 from itertools import chain
 
@@ -145,20 +145,20 @@ class BaseSheet(WorksheetBaseMixin, metaclass=BaseSheetMetaclass):
     @classmethod
     def init_named_row(cls):
         if cls.__init_named_row:
-            return cls.__init_named_row
+            return deepcopy(cls.__init_named_row)
         cls.__init_named_row = {column.name: column.field_type() for column in cls._columns}
-        return cls.__init_named_row
+        return deepcopy(cls.__init_named_row)
 
     @classmethod
     def init_list_row(cls):
         if cls.__init_list_row:
-            return cls.__init_list_row
+            return deepcopy(cls.__init_list_row)
         columns = cls._columns
         result = [None for i in range(columns[-1].order_number)]
         for column in columns:
             result[column.order_number - 1] = column.field_type()
         cls.__init_list_row = result
-        return cls.__init_list_row
+        return deepcopy(cls.__init_list_row)
 
     @classmethod
     def get_primary_field(cls, raise_exc=False):
