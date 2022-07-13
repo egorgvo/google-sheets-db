@@ -12,8 +12,7 @@ class Field:
         return f'Field({self.name})'
 
     def __get__(self, instance, owner):
-        """Descriptor for retrieving a value from a field in a document.
-        """
+        """Descriptor for retrieving a value from a field in a document."""
         if instance is None:
             # Document class being used rather than a document object
             return self
@@ -36,9 +35,12 @@ class Field:
 class PrimaryKey(Field):
 
     def __init__(self, *args, field_type=None, default='%#not_specified#%', **kwargs):
+        # Yes, it is a primary key, ignore the keyword
         kwargs.pop('primary_key', None)
+        # By default it is an int
         if not field_type:
             field_type = int
+            # Use 0 as default value for int may be misleading, let's use None
             if default == '%#not_specified#%':
                 default = None
         super().__init__(*args, primary_key=True, field_type=field_type, default=default, **kwargs)
