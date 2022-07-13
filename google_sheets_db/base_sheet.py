@@ -86,7 +86,7 @@ class BaseSheetMetaclass(type):
         return sorted(columns, key=lambda x: x.order_number)
 
 
-class WorksheetBase():
+class WorksheetBaseMixin():
     _sheet: Worksheet = None
 
     @classmethod
@@ -100,7 +100,7 @@ class WorksheetBase():
         return cls._sheet.col_values(order_number)
 
 
-class BaseSheet(WorksheetBase, metaclass=BaseSheetMetaclass):
+class BaseSheet(WorksheetBaseMixin, metaclass=BaseSheetMetaclass):
     __init_named_row = None
     __init_list_row = None
     __primary_field = None
