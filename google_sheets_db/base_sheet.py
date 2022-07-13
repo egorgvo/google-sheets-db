@@ -84,21 +84,28 @@ class BaseSheetMetaclass(type):
         return sorted(columns, key=lambda x: x.order_number)
 
 
-class WorksheetBaseMixin():
+class WorksheetMixin():
     _sheet: Worksheet = None
 
+    def check_sheet(func):
+        def decorator(self, *args, **kwargs):
+            if not self._sheet:
+                raise Exception("No sheet defined.")
+            return func(self, *args, **kwargs)
+        return decorator
+
     @classmethod
+    @check_sheet
     def get_all_values(cls):
-        if not cls._sheet:
-            raise Exception("No sheet defined.")
         return cls._sheet.get_all_values()
 
     @classmethod
+    @check_sheet
     def get_column_values(cls, order_number):
         return cls._sheet.col_values(order_number)
 
 
-class BaseSheet(WorksheetBaseMixin, metaclass=BaseSheetMetaclass):
+class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
     __init_named_row = None
     __init_list_row = None
     __primary_field = None
