@@ -66,7 +66,6 @@ class BaseSheetMetaclass(type):
         order_numbers = [i for i in order_numbers if i not in specified_order_numbers]
         # Because we will set them to other columns where order_number is not specified
 
-        # columns = dict()
         columns = []
         for name, value in attrs.items():
             # Define Field
@@ -82,7 +81,6 @@ class BaseSheetMetaclass(type):
             # columns[name] = field
             columns.append(field)
         # Sort by order number
-        # return DottedOrderedDict(sorted(columns.items(), key=lambda i: i[1].order_number))
         return sorted(columns, key=lambda x: x.order_number)
 
 
