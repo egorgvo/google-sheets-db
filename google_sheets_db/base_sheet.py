@@ -2,9 +2,10 @@ from copy import copy, deepcopy
 from functools import cached_property
 
 import pandas as pd
+from deprecation import deprecated
 from gspread.utils import rowcol_to_a1
 
-from google_sheets_db import Field
+from google_sheets_db import Field, __version__
 from google_sheets_db.base_sheet_metaclass import BaseSheetMetaclass
 from google_sheets_db.worksheet_mixin import WorksheetMixin
 
@@ -127,8 +128,11 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return len(cls.get_all_values())
 
     @classmethod
+    @deprecated(deprecated_in="1.0.9", removed_in="2.0",
+                current_version=__version__,
+                details="Use the truncate function instead")
     def clear(cls):
-        return cls._sheet.clear()
+        return cls.truncate()
 
     @classmethod
     def convert_named_row_to_list(cls, **row):

@@ -1,17 +1,25 @@
-from gspread.models import Worksheet
+from gspread.models import Spreadsheet, Worksheet
+
+
+def check_spreadsheet(func):
+    def decorator(self, *args, **kwargs):
+        if not hasattr(self, '_db') or not self._db:
+            raise Exception("No spreadsheet defined.")
+        return func(self, *args, **kwargs)
+    return decorator
 
 
 def check_sheet(func):
     def decorator(self, *args, **kwargs):
-        if not self._sheet:
+        if not hasattr(self, '_sheet') or not self._sheet:
             raise Exception("No sheet defined.")
         return func(self, *args, **kwargs)
-
     return decorator
 
 
 class WorksheetMixin():
-    _sheet: Worksheet = None
+    _db: Spreadsheet
+    _sheet: Worksheet
 
     @classmethod
     @check_sheet
@@ -22,3 +30,8 @@ class WorksheetMixin():
     @check_sheet
     def get_column_values(cls, order_number):
         return cls._sheet.col_values(order_number)
+
+    @classmethod
+    @check_sheet
+    def truncate(cls):
+        return cls._sheet.clear()

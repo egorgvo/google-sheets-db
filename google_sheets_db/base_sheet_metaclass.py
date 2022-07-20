@@ -13,6 +13,10 @@ class BaseSheetMetaclass(type):
     def __repr__(self):
         return self.__name__
 
+    def __init__(self, name, bases, attrs):
+        super().__init__(name, bases, attrs)
+        self.__sheet = None
+
     @property
     @lru_cache
     def _db(cls) -> Spreadsheet:
@@ -32,9 +36,23 @@ class BaseSheetMetaclass(type):
         return cls.meta['sheet_name'] if cls.meta.get('sheet_name') else cls.__name__
 
     @property
-    @lru_cache
     def _sheet(cls) -> Worksheet:
-        return cls._db.get_sheet_by_name(cls._sheet_name)
+        if cls.__sheet:
+            return cls.__sheet
+
+        cls.__sheet = cls._db.get_sheet_by_name(cls._sheet_name)
+        return cls.__sheet
+
+    def exists(self) -> bool:
+        return self._db.sheet_exists(name=self._sheet_name)
+
+    def create_sheet_if_not_exists(self) -> Worksheet:
+        self.__sheet = self._db.create_sheet_if_not_exists(name=self._sheet_name)
+        return self._sheet
+
+    def drop(self):
+        self._db.drop_sheet(self._sheet)
+        self.__sheet = None
 
     @property
     @lru_cache
@@ -43,13 +61,14 @@ class BaseSheetMetaclass(type):
         # Remove inner variables
         attrs.pop('meta', None)
         for name, value in list(attrs.items()):
-            if name.startswith('__'):
-                attrs.pop(name)
-            elif name.startswith('_BaseSheet__'):
-                attrs.pop(name)
-            # Remove properties and methods
-            elif inspect.ismethod(value) or isinstance(value, property) or isinstance(value, types.FunctionType):
-                attrs.pop(name)
+            for prefix in ['__', '_BaseSheet__', '_BaseSheetMetaclass__']:
+                if name.startswith(prefix):
+                    attrs.pop(name)
+                    break
+            else:
+                # Remove properties and methods
+                if inspect.ismethod(value) or isinstance(value, property) or isinstance(value, types.FunctionType):
+                    attrs.pop(name)
 
         # TODO Add check for reserved names
 
