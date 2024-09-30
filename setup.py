@@ -23,6 +23,11 @@ setup(
         "Programming Language :: Python :: 3",
     ],
     packages=["google_sheets_db"],
-    install_requires=["oauth2client==3.0.0", "gspread==3.6.0", "pandas>=1.3.1"],
+    install_requires=[
+        "oauth2client==3.0.0",
+        "gspread==3.6.0",
+        "pandas>=1.3.1",
+        "deprecation==2.1.0"
+    ],
     include_package_data=True,
 )

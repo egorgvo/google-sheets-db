@@ -33,7 +33,7 @@ class BaseSheetMetaclass(type):
     @property
     @lru_cache
     def _sheet_name(cls) -> str:
-        return cls.meta['sheet_name'] if cls.meta.get('sheet_name') else cls.__name__
+        return cls.meta.get('sheet_name') or cls.__name__
 
     @property
     def _sheet(cls) -> Worksheet:

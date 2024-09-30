@@ -22,6 +22,12 @@ instance = Sheet1(first_name='Name', last_name='Surname')
 instance.save()
 ```
 
+## Google API Credentials
+To use this library you will need Google API credentials (which simply is a json file with Google data).  
+To get them use this manual:
+
+[How to get a credentials](credentials.md)
+
 ### 1.0.0 (2021-01-14)
 
 - Init version.

@@ -1,3 +1,5 @@
+from typing import Any
+
 from gspread.models import Spreadsheet, Worksheet
 
 
@@ -17,18 +19,19 @@ def check_sheet(func):
     return decorator
 
 
-class WorksheetMixin():
+class WorksheetMixin:
     _db: Spreadsheet
     _sheet: Worksheet
 
     @classmethod
     @check_sheet
-    def get_all_values(cls):
+    def get_all_values(cls) -> list[list[Any]]:
+        """Returns all shet values"""
         return cls._sheet.get_all_values()
 
     @classmethod
     @check_sheet
-    def get_column_values(cls, order_number):
+    def get_column_values(cls, order_number: int) -> list[Any]:
         return cls._sheet.col_values(order_number)
 
     @classmethod

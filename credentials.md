@@ -1,4 +1,4 @@
-INSTRUCTIONS
+# How to get Google API Credentials
 
 1. Go to the Google APIs Console: https://console.developers.google.com/
 2. Create a new project.

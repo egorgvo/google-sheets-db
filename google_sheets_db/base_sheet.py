@@ -1,5 +1,6 @@
 from copy import copy, deepcopy
 from functools import cached_property
+from typing import Union, Optional, Self, Any
 
 import pandas as pd
 from deprecation import deprecated
@@ -14,6 +15,8 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
     __init_named_row = None
     __init_list_row = None
     __primary_field = None
+    # Columns of a sheet
+    _columns: list[Field]
     meta = {}
 
     def __init__(self, *args, **kwargs):
@@ -26,24 +29,19 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
     def __repr__(self):
         return f'{self.__class__.__name__}({self.pk})'
 
-    @property
-    def _columns(self) -> list[Field]:
-        """Just an alias for class _columns"""
-        return self.__class__._columns  # noqa
-
     @cached_property
-    def _pk_name(self):
+    def _pk_name(self) -> str:
         return self.get_primary_field().name
 
     @property
-    def pk(self):
+    def pk(self) -> Union[int, str]:
         return getattr(self, self._pk_name)
 
     @pk.setter
-    def pk(self, value):
+    def pk(self, value: Union[int, str]) -> None:
         setattr(self, self._pk_name, value)
 
-    def save(self):
+    def save(self) -> Self:
         update = copy(self._data)
         pk = self.pk
         if pk is None:
@@ -55,14 +53,16 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return self
 
     @classmethod
-    def init_named_row(cls):
+    def init_named_row(cls) -> dict[str, Any]:
+        """Init dictionary with default row values"""
         if cls.__init_named_row:
             return deepcopy(cls.__init_named_row)
         cls.__init_named_row = {column.name: column.default for column in cls._columns}
         return deepcopy(cls.__init_named_row)
 
     @classmethod
-    def init_list_row(cls):
+    def init_list_row(cls) -> list[Any]:
+        """Init list with default row values"""
         if cls.__init_list_row:
             return deepcopy(cls.__init_list_row)
         columns = cls._columns
@@ -73,7 +73,8 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return deepcopy(cls.__init_list_row)
 
     @classmethod
-    def get_primary_field(cls, raise_exc=False):
+    def get_primary_field(cls, raise_exc: bool = False) -> Optional[Field]:
+        """Returns primary key name"""
         if cls.__primary_field:
             return cls.__primary_field
         column = [f for f in cls._columns if f.primary_key]
@@ -88,14 +89,15 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return cls.__primary_field
 
     @classmethod
-    def _get_column_by_name(cls, name):
+    def _get_column_by_name(cls, name: str) -> Field:
+        """Returns field by its name"""
         column = [f for f in cls._columns if f.name == name]
         if not column:
             raise Exception(f"Unknown field name: {name}. Sheet schema: {cls.__name__}")
         return column[0]
 
     @classmethod
-    def _get_column_by_order_number(cls, order_number, raise_exc=True):
+    def _get_column_by_order_number(cls, order_number: int, raise_exc: bool = True) -> Optional[Field]:
         column = [f for f in cls._columns if f.order_number == order_number]
         if not column and raise_exc:
             raise Exception(f"Order number is unknown for specified sheet schema: {order_number}, "
@@ -105,7 +107,8 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return column[0]
 
     @classmethod
-    def get_column_values(cls, name=None, order_number=None):
+    def get_column_values(cls, name: str = None, order_number: int = None) -> list[Any]:
+        """Returns all values of column"""
         if not name and not order_number:
             raise Exception(f"Not name nor order_number specified for get_column_values method.")
         if not order_number:
@@ -114,17 +117,20 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return super().get_column_values(order_number)
 
     @classmethod
-    def get_all_records(cls):
+    def get_all_records(cls) -> list[dict[str, Any]]:
+        """Returns table data as list of dicts"""
         values = cls.get_all_values()
         names = [f.name for f in cls._columns]
         return [dict(zip(names, value)) for value in values]
 
     @classmethod
-    def get_all_data(cls, as_dicts=False):
+    def get_all_data(cls, as_dicts: bool = False):
+        """Returns table data - as list of dicts or list of lists"""
         return cls.get_all_records() if as_dicts else cls.get_all_values()
 
     @classmethod
-    def count(cls):
+    def count(cls) -> int:
+        """Get total rows count"""
         return len(cls.get_all_values())
 
     @classmethod
@@ -135,14 +141,16 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return cls.truncate()
 
     @classmethod
-    def convert_named_row_to_list(cls, **row):
+    def convert_named_row_to_list(cls, **row) -> list[Any]:
+        """Converts named row to a list"""
         result = cls.init_list_row()
         for name, value in row.items():
             result[cls._get_column_by_name(name).order_number - 1] = value
         return result
 
     @classmethod
-    def convert_list_row_to_named(cls, **row):
+    def convert_list_row_to_named(cls, **row) -> dict[str, Any]:
+        """Converts list row to dict"""
         result = cls.init_named_row()
         for i, value in enumerate(row):
             column = cls._get_column_by_order_number(i + 1, raise_exc=False)
@@ -152,7 +160,7 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return result
 
     @classmethod
-    def _prepare_row(cls, *row, pk=None, as_named=False, **fields):
+    def _prepare_row(cls, *row, pk=None, as_named=False, **fields) -> Union[dict[str, Any], list[Any]]:
         row = list(row)
 
         # if pk specified - put it in fields
@@ -175,7 +183,8 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return cls.convert_named_row_to_list(**fields)
 
     @classmethod
-    def generate_pk(cls, named=False):
+    def generate_pk(cls, named=False) -> Union[int, dict[str, int]]:
+        """Generates primary key"""
         primary_field = cls.get_primary_field()
         if not primary_field:
             return {} if named else None
@@ -190,7 +199,8 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return pk
 
     @classmethod
-    def insert(cls, *row, generate_pk=True, **fields):
+    def insert(cls, *row, generate_pk=True, **fields) -> Self:
+        """Inserts a row to a table"""
         primary_field = cls.get_primary_field()
         if primary_field.name not in fields and len(row) < len(cls._columns) and generate_pk:
             fields.update(cls.generate_pk(named=True))
@@ -209,7 +219,12 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return cls(*row, _index=_index, pk=primary_key)
 
     @classmethod
-    def insert_many(cls, *rows):
+    def insert_many(cls, *rows) -> int:
+        """
+        Inserts many rows to a table
+
+        Returns next index.
+        """
         if len(rows) == 1 and isinstance(rows[0], list) and len(rows[0]) == 1 and isinstance(rows[0][0], list):
             rows = rows[0]
         columns = cls._columns
@@ -223,7 +238,9 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return index
 
     @classmethod
-    def update_or_insert(cls, filtr=None, update=None, first_only=False):
+    def update_or_insert(cls, filtr=None, update=None, first_only=False) -> list[Self]:
+        """Update row or inserts if it doesn't exist"""
+
         # get dataframe
         values = cls.get_all_values()
         columns_names = [c.name for c in cls._columns]
@@ -256,7 +273,7 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return cls._update(pk=pk, *row, **fields)
 
     @classmethod
-    def get_row_index_for_pk(cls, pk):
+    def get_row_index_for_pk(cls, pk) -> Optional[int]:
         indexes = cls.get_column_values(order_number=cls.get_primary_field().order_number)
         if pk in indexes:
             return indexes.index(pk) + 1
@@ -265,14 +282,14 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return None
 
     @classmethod
-    def get_row_with_pk(cls, pk):
+    def get_row_with_pk(cls, pk) -> Optional[list[Any]]:
         index = cls.get_row_index_for_pk(pk)
         if index is None:
             return None
         return cls._sheet.row_values(index)
 
     @classmethod
-    def with_pk(cls, pk):
+    def with_pk(cls, pk) -> Self:
         row = cls.get_row_with_pk(pk)
         if not row:
             return None

@@ -1,7 +1,16 @@
+from typing import Any
+
 
 class Field:
 
-    def __init__(self, field_type=str, name=None, order_number=None, primary_key=False, default='%#not_specified#%'):
+    def __init__(
+            self,
+            field_type: type = str,
+            name: str = None,
+            order_number: int = None,
+            primary_key: bool = False,
+            default: Any = '%#not_specified#%'
+    ):
         self.name = name
         self.order_number = order_number
         self.primary_key = primary_key
@@ -37,7 +46,7 @@ class PrimaryKey(Field):
     def __init__(self, *args, field_type=None, default='%#not_specified#%', **kwargs):
         # Yes, it is a primary key, ignore the keyword
         kwargs.pop('primary_key', None)
-        # By default it is an int
+        # By default: int
         if not field_type:
             field_type = int
             # Use 0 as default value for int may be misleading, let's use None
