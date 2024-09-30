@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from copy import copy, deepcopy
 from functools import cached_property
 from typing import Union, Optional, Self, Any
@@ -29,6 +30,11 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
     def __repr__(self):
         return f'{self.__class__.__name__}({self.pk})'
 
+    @property
+    def _columns(self) -> list[Field]:
+        """Just an alias for class _columns"""
+        return self.__class__._columns  # noqa
+
     @cached_property
     def _pk_name(self) -> str:
         return self.get_primary_field().name
@@ -54,7 +60,11 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
 
     @classmethod
     def init_named_row(cls) -> dict[str, Any]:
-        """Init dictionary with default row values"""
+        """
+        Init dictionary with default row values
+
+        No API calls.
+        """
         if cls.__init_named_row:
             return deepcopy(cls.__init_named_row)
         cls.__init_named_row = {column.name: column.default for column in cls._columns}
@@ -62,11 +72,15 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
 
     @classmethod
     def init_list_row(cls) -> list[Any]:
-        """Init list with default row values"""
+        """
+        Init list with default row values
+
+        No API calls.
+        """
         if cls.__init_list_row:
             return deepcopy(cls.__init_list_row)
         columns = cls._columns
-        result = [None for i in range(columns[-1].order_number)]
+        result = [None for i in range(cls.last_column_number)]
         for column in columns:
             result[column.order_number - 1] = column.default
         cls.__init_list_row = result
@@ -117,21 +131,24 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return super().get_column_values(order_number)
 
     @classmethod
-    def get_all_records(cls) -> list[dict[str, Any]]:
+    def get_table_records(cls) -> list[OrderedDict[str, Any]]:
         """Returns table data as list of dicts"""
-        values = cls.get_all_values()
+        values = cls.get_table_values()
         names = [f.name for f in cls._columns]
-        return [dict(zip(names, value)) for value in values]
+        return [OrderedDict(zip(names, value)) for value in values]
 
     @classmethod
-    def get_all_data(cls, as_dicts: bool = False):
-        """Returns table data - as list of dicts or list of lists"""
-        return cls.get_all_records() if as_dicts else cls.get_all_values()
+    def get_table_values(cls) -> list[list[str]]:
+        """Returns table data as list of lists"""
+        start = cls.cell_a1(cls._sheet_start_column, cls._sheet_start_row)
+        end = cls.cell_a1(cls._sheet_start_column + cls.last_column_number)
+        values = cls.get_range_values(f'{start}:{end}')[0]
+        return values
 
     @classmethod
     def count(cls) -> int:
         """Get total rows count"""
-        return len(cls.get_all_values())
+        return len(cls.get_table_values())
 
     @classmethod
     @deprecated(deprecated_in="1.0.9", removed_in="2.0",

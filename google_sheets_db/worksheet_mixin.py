@@ -31,6 +31,17 @@ class WorksheetMixin:
 
     @classmethod
     @check_sheet
+    def get_range_values(cls, *ranges) -> list[list[list[Any]]]:
+        """Returns all sheet values"""
+        try:
+            return cls._sheet.batch_get(ranges)
+        except KeyError as exc:
+            if exc.args == ('values',):
+                return [[]]
+            raise
+
+    @classmethod
+    @check_sheet
     def get_column_values(cls, order_number: int) -> list[Any]:
         return cls._sheet.col_values(order_number)
 

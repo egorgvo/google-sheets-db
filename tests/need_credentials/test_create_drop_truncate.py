@@ -1,4 +1,5 @@
 import os
+from collections import OrderedDict
 from unittest import main, TestCase
 
 from dotenv import load_dotenv
@@ -39,8 +40,12 @@ class CreateDropTruncateTests(TestCase):
         instance = SheetToDelete(first_name='Name', last_name='Surname')
         instance.save()
         # Get renewed values of id column
-        values = SheetToDelete.get_all_values()
+        values = SheetToDelete.get_table_values()
         self.assertEqual(len(values), 1)
+        # Get record
+        values = SheetToDelete.get_table_records()
+        self.assertEqual(len(values), 1)
+        self.assertEqual(values, [OrderedDict(id=str(1), first_name='Name', last_name='Surname')])
         # truncate
         SheetToDelete.truncate()
         values = SheetToDelete.get_all_values()

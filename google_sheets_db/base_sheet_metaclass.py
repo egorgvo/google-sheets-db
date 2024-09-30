@@ -4,6 +4,7 @@ from functools import lru_cache
 from itertools import chain
 
 from gspread.models import Spreadsheet, Worksheet
+from gspread.utils import rowcol_to_a1
 
 from google_sheets_db import Field, GoogleSheetsDB
 
@@ -36,12 +37,31 @@ class BaseSheetMetaclass(type):
         return cls.meta.get('sheet_name') or cls.__name__
 
     @property
+    @lru_cache
+    def _sheet_start_row(cls) -> str:
+        return cls.meta.get('start_row') or 1
+
+    @property
+    @lru_cache
+    def _sheet_start_column(cls) -> str:
+        return cls.meta.get('start_column') or 1
+
+    @property
     def _sheet(cls) -> Worksheet:
         if cls.__sheet:
             return cls.__sheet
 
         cls.__sheet = cls._db.get_sheet_by_name(cls._sheet_name)
         return cls.__sheet
+
+    def cell_a1(cls, column: int, row: int = None) -> str:
+        """
+        Returns a1 notation of a cell
+
+        Allows to get column letter.
+        """
+        a1 = rowcol_to_a1(row or 1, column)
+        return a1 if row else a1[:-1]
 
     def exists(self) -> bool:
         return self._db.sheet_exists(name=self._sheet_name)
@@ -98,3 +118,9 @@ class BaseSheetMetaclass(type):
             columns.append(field)
         # Sort by order number
         return sorted(columns, key=lambda x: x.order_number)
+
+    @property
+    @lru_cache
+    def last_column_number(cls) -> int:
+        """Returns last column order number"""
+        return cls._columns[-1].order_number
