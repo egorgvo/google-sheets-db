@@ -110,10 +110,10 @@ class BaseSheetMetaclass(type):
                 field.name = name
             else:
                 field = Field(name=name, field_type=value, order_number=order_numbers.pop(0))
-                setattr(cls, name, field)
             # Set order number
             if not field.order_number:
                 field.order_number = order_numbers.pop(0)
+            setattr(cls, name, field)
             # columns[name] = field
             columns.append(field)
         # Sort by order number

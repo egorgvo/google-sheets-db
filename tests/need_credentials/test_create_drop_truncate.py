@@ -42,10 +42,15 @@ class CreateDropTruncateTests(TestCase):
         # Get renewed values of id column
         values = SheetToDelete.get_table_values()
         self.assertEqual(len(values), 1)
+        self.assertEqual(values, [['1', 'Name', 'Surname']])
         # Get record
         values = SheetToDelete.get_table_records()
         self.assertEqual(len(values), 1)
-        self.assertEqual(values, [OrderedDict(id=str(1), first_name='Name', last_name='Surname')])
+        row = values[0]
+        self.assertTrue(isinstance(row, SheetToDelete))
+        self.assertEqual(row.id, str(1))
+        self.assertEqual(row.first_name, 'Name')
+        self.assertEqual(row.last_name, 'Surname')
         # truncate
         SheetToDelete.truncate()
         values = SheetToDelete.get_all_values()

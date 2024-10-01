@@ -1,11 +1,9 @@
-from collections import OrderedDict
 from copy import copy, deepcopy
 from functools import cached_property
 from typing import Union, Optional, Self, Any
 
 import pandas as pd
 from deprecation import deprecated
-from gspread.utils import rowcol_to_a1
 
 from google_sheets_db import Field, __version__
 from google_sheets_db.base_sheet_metaclass import BaseSheetMetaclass
@@ -20,15 +18,41 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
     _columns: list[Field]
     meta = {}
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, _index: int = None, **kwargs):
         self._data = {}
-        self._index = kwargs.pop('_index', None)
+        self._index = _index
         row_dict = self._prepare_row(*args, as_named=True, **kwargs)
         for field in self._columns:
-            setattr(self, field.name, row_dict.get(field.name, None))
+            self[field.name] = row_dict.get(field.name, None)
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.pk})'
+
+    def __iter__(self):
+        for field in self._columns:
+            yield field, getattr(self, field.name)
+
+    def __eq__(self, other):
+        for f1, f2 in zip(self, other):
+            if f1 != f2:
+                return False
+        return True
+
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+
+    def __getitem__(self, item):
+        return getattr(self, item)
+
+    def values(self, with_gaps: bool = False) -> list[Any]:
+        """Returns values of instance"""
+
+        if with_gaps:
+            values = [None for number in range(self.__class__.last_column_number)]
+            for field in self._columns:
+                values[field.order_number - 1] = self[field.name]
+        else:
+            return [self[field.name] for field in self._columns]
 
     @property
     def _columns(self) -> list[Field]:
@@ -121,25 +145,52 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return column[0]
 
     @classmethod
-    def get_column_values(cls, name: str = None, order_number: int = None) -> list[Any]:
-        """Returns all values of column"""
-        if not name and not order_number:
-            raise Exception(f"Not name nor order_number specified for get_column_values method.")
+    def get_column_values(cls, order_number: int = None, name: str = 'pk') -> list[Any]:
+        """
+        Returns all values of column
+
+        Calls API.
+        """
+
         if not order_number:
-            column = cls._get_column_by_name(name)
+            if name == 'pk':
+                column = cls.get_primary_field()
+            else:
+                column = cls._get_column_by_name(name)
             order_number = column.order_number
-        return super().get_column_values(order_number)
+
+        column_number = cls._sheet_start_column + order_number - 1
+        start = cls.cell_a1(column_number, cls._sheet_start_row)
+        end = cls.cell_a1(column_number)
+        values = cls.get_range_values(f'{start}:{end}')[0]
+        return [i[0] if i else None for i in values]
 
     @classmethod
-    def get_table_records(cls) -> list[OrderedDict[str, Any]]:
-        """Returns table data as list of dicts"""
+    def get_table_records(cls) -> list[Self]:
+        """
+        Returns table data as list of dicts
+
+        Calls API.
+        """
+
         values = cls.get_table_values()
-        names = [f.name for f in cls._columns]
-        return [OrderedDict(zip(names, value)) for value in values]
+        records = []
+        for row in values:
+            data = {}
+            for field in cls._columns:
+                if len(row) >= field.order_number:
+                    data[field.name] = row[field.order_number - 1]
+            records.append(cls(**data))
+
+        return records
 
     @classmethod
     def get_table_values(cls) -> list[list[str]]:
-        """Returns table data as list of lists"""
+        """
+        Returns table data as list of lists
+
+        Calls API.
+        """
         start = cls.cell_a1(cls._sheet_start_column, cls._sheet_start_row)
         end = cls.cell_a1(cls._sheet_start_column + cls.last_column_number)
         values = cls.get_range_values(f'{start}:{end}')[0]
@@ -147,7 +198,11 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
 
     @classmethod
     def count(cls) -> int:
-        """Get total rows count"""
+        """
+        Get total rows count
+
+        Calls API.
+        """
         return len(cls.get_table_values())
 
     @classmethod
@@ -201,11 +256,15 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
 
     @classmethod
     def generate_pk(cls, named=False) -> Union[int, dict[str, int]]:
-        """Generates primary key"""
+        """
+        Generates primary key
+
+        Calls API.
+        """
         primary_field = cls.get_primary_field()
         if not primary_field:
             return {} if named else None
-        indexes = cls.get_column_values(order_number=primary_field.order_number)
+        indexes = cls.get_column_values(primary_field.order_number)
         pk = 1
         while True:
             if pk not in indexes and str(pk) not in indexes:
@@ -217,7 +276,11 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
 
     @classmethod
     def insert(cls, *row, generate_pk=True, **fields) -> Self:
-        """Inserts a row to a table"""
+        """
+        Inserts row into a table
+
+        Calls API.
+        """
         primary_field = cls.get_primary_field()
         if primary_field.name not in fields and len(row) < len(cls._columns) and generate_pk:
             fields.update(cls.generate_pk(named=True))
@@ -231,9 +294,14 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
 
         primary_key = row[primary_field.order_number - 1] if primary_field else None
 
-        _index = int(cls.count()) + 1
-        cls._sheet.insert_row(row, index=_index)
-        return cls(*row, _index=_index, pk=primary_key)
+        _index = cls._sheet_start_row + cls.count()
+        start = cls.cell_a1(cls._sheet_start_column, _index)
+        end = cls.cell_a1(cls._sheet_start_column + cls.last_column_number, _index)
+        update_data = [{'range': f'{start}:{end}', 'values': [row]}]
+
+        cls._sheet.batch_update(update_data)
+        instance = cls(*row, _index=_index, pk=primary_key)
+        return instance
 
     @classmethod
     def insert_many(cls, *rows) -> int:
@@ -259,7 +327,7 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         """Update row or inserts if it doesn't exist"""
 
         # get dataframe
-        values = cls.get_all_values()
+        values = cls.get_table_values()
         columns_names = [c.name for c in cls._columns]
         for row in values:
             row.extend([None] * (len(columns_names) - len(row)))
@@ -291,7 +359,7 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
 
     @classmethod
     def get_row_index_for_pk(cls, pk) -> Optional[int]:
-        indexes = cls.get_column_values(order_number=cls.get_primary_field().order_number)
+        indexes = cls.get_column_values(cls.get_primary_field().order_number)
         if pk in indexes:
             return indexes.index(pk) + 1
         elif str(pk) in indexes:
@@ -299,31 +367,32 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
         return None
 
     @classmethod
-    def get_row_with_pk(cls, pk) -> Optional[list[Any]]:
-        index = cls.get_row_index_for_pk(pk)
-        if index is None:
-            return None
-        return cls._sheet.row_values(index)
-
-    @classmethod
     def with_pk(cls, pk) -> Self:
-        row = cls.get_row_with_pk(pk)
+        _index = cls.get_row_index_for_pk(pk)
+        if _index is None:
+            return None
+
+        row_index = cls._sheet_start_row + _index - 1
+        start = cls.cell_a1(cls._sheet_start_column, row_index)
+        end = cls.cell_a1(cls._sheet_start_column + cls.last_column_number, row_index)
+        row = cls.get_range_values(f'{start}:{end}')[0]
+
         if not row:
             return None
-        return cls(*row)
+        return cls(*row[0], _index=_index)
 
     @classmethod
     def _update(cls, *row, index=None, pk=None, **fields):
         if index is None and pk is None:
             raise Exception(f"No key specified for _update method.")
 
-        index = cls.get_row_index_for_pk(pk)
-        if not index:
+        instance = cls.with_pk(pk)
+        if not instance:
             raise Exception(f"No row found for pk {pk}.")
         # init result_row with current row values
         sheet = cls._sheet
-        result_row = sheet.row_values(index)
 
+        result_row = []
         # and then fill it with new values
         new_values = cls._prepare_row(*row, pk=pk, as_named=True, **fields)
         for column in cls._columns:
@@ -333,5 +402,6 @@ class BaseSheet(WorksheetMixin, metaclass=BaseSheetMetaclass):
                 result_row.append(None)
             result_row[column.order_number - 1] = new_values[column.name]
 
-        first_cell = rowcol_to_a1(index, 1)
+        first_cell = cls.cell_a1(cls._sheet_start_column, cls._sheet_start_row + instance._index - 1)
+
         return sheet.update(first_cell, [result_row])

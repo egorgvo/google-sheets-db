@@ -49,6 +49,12 @@ class BaseSheetTests(TestCase):
         self.assertEqual(Sheet.last_column_number, 3)
         self.assertEqual(Sheet2.last_column_number, 5)
 
+    def test_fields(self):
+        row = Sheet(first_name="Name")
+        row.last_name = 'Surname'
+        self.assertEqual(row.first_name, 'Name')
+        self.assertEqual(row.last_name, 'Surname')
+
 
 if __name__ == '__main__':
     main()

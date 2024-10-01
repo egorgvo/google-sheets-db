@@ -27,7 +27,8 @@ class Field:
             return self
 
         # Get value from document instance if available
-        return instance._data.get(self.name) # noqa
+        value = instance._data.get(self.name) # noqa
+        return value
 
     def __set__(self, instance, value):
         """Descriptor for assigning a value to a field in a document."""
